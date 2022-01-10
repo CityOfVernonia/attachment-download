@@ -1,0 +1,29 @@
+{
+  "name": "attachment-download",
+  "version": "1.0.0",
+  "description": "Download attachments.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CityOfVernonia/attachment-download.git"
+  },
+  "author": "COV-GIS",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/CityOfVernonia/attachment-download/issues"
+  },
+  "homepage": "https://github.com/CityOfVernonia/attachment-download#readme",
+  "dependencies": {
+    "@esri/arcgis-rest-auth": "^3.4.3",
+    "@esri/arcgis-rest-feature-layer": "^3.4.3",
+    "@esri/arcgis-rest-request": "^3.4.3",
+    "chalk": "^4.1.2",
+    "download": "^8.0.0",
+    "fs-extra": "^10.0.0",
+    "isomorphic-form-data": "^2.0.0",
+    "node-fetch": "^2.6.6"
+  }
+}

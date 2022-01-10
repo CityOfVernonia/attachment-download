@@ -21,8 +21,11 @@ const fs = require('fs-extra');
 const chalk = require('chalk');
 setDefaultRequestOptions({ fetch: require('node-fetch') });
 
-let objectIdField;
-
+/**
+ * Generic error handling.
+ * @param {String} message 
+ * @param {Error} error
+ */
 const _error = (message, error) => {
   console.log(
     chalk.red(message)
@@ -30,24 +33,10 @@ const _error = (message, error) => {
   console.log(error);
 };
 
-const _queryFeatures = () => {
-  queryFeatures({
-    url: featureServiceUrl,
-    returnIdsOnly: true,
-  })
-    .then((response) => {
-      if (log) console.log(response);
-
-      objectIdField = response.objectIdFieldName;
-
-      response.objectIds.forEach(_getAttachments);
-    })
-    .catch((error) => {
-      _error('_queryFeatures error', error);
-    });
-};
-
-
+/**
+ * Get attachments for a feature.
+ * @param {Number} id 
+ */
 const _getAttachments = (id) => {
   getAttachments({
     url: featureServiceUrl,
@@ -68,7 +57,11 @@ const _getAttachments = (id) => {
     });
 };
 
-
+/**
+ * Download attachment.
+ * @param {AttachmentInfo} attachmentInfo 
+ * @param {Number} id
+ */
 const _downloadAttachment = (attachmentInfo, id) => {
   const attachmentUrl = `${featureServiceUrl}/${id}/attachments/${attachmentInfo.id}`;
 
@@ -81,6 +74,12 @@ const _downloadAttachment = (attachmentInfo, id) => {
     });
 };
 
+/**
+ * Write the attachment to disc.
+ * @param {Buffer} data 
+ * @param {AttachmentInfo} attachmentInfo 
+ * @param {Number} id 
+ */
 const _writeFile = (data, attachmentInfo, id) => {
   const { id: attachmentId, name } = attachmentInfo;
 
@@ -107,7 +106,23 @@ const _writeFile = (data, attachmentInfo, id) => {
   });
 };
 
-
+/**
+ * Ensure attachments directory.
+ */
 fs.ensureDir('attachments');
 
-_queryFeatures();
+/**
+ * Begin by querying all object ids.
+ */
+queryFeatures({
+  url: featureServiceUrl,
+  returnIdsOnly: true,
+})
+  .then((response) => {
+    if (log) console.log(response);
+
+    response.objectIds.forEach(_getAttachments);
+  })
+  .catch((error) => {
+    _error('_queryFeatures error', error);
+  });

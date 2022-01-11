@@ -4,52 +4,108 @@
 // service url
 const featureServiceUrl = 'https://<SERVER>/FeatureServer/0';
 
+// output directory relative to root of project
+const outputDirectory = 'attachments';
+
 // prefix for each feature attachments directory
 const directoryPrefix = 'feature';
 
+// prefix field for each file and overrides `directoryPrefix`
+// indended for non null unique values
+// be careful...no value or type checking and will potentially overwrite some files
+const prefixField = '';
+
+// single flat output directory
+const flat = false;
+
+// create a token to use in requests
+const portal = '';
+const username = '';
+const password = '';
+
 // log responses (errors always logged)
-const log = true;
+const log = false;
 
 /**
  * Modules...
  */
 require('isomorphic-form-data');
 const { setDefaultRequestOptions } = require('@esri/arcgis-rest-request');
-const { queryFeatures, getAttachments } = require('@esri/arcgis-rest-feature-layer');
+const { queryFeatures, getAttachments, getFeature } = require('@esri/arcgis-rest-feature-layer');
+const { UserSession } = require('@esri/arcgis-rest-auth');
 const download = require('download');
 const fs = require('fs-extra');
 const chalk = require('chalk');
 setDefaultRequestOptions({ fetch: require('node-fetch') });
 
+let token;
+
 /**
  * Generic error handling.
- * @param {String} message 
+ * @param {String} message
  * @param {Error} error
  */
 const _error = (message, error) => {
-  console.log(
-    chalk.red(message)
-  );
+  console.log(chalk.red(message));
   console.log(error);
 };
 
 /**
+ * Get all object ids.
+ */
+const _queryFeatureIds = () => {
+  queryFeatures({
+    url: featureServiceUrl,
+    where: '1 = 1',
+    returnIdsOnly: true,
+    params: {
+      token,
+    },
+  })
+    .then((response) => {
+      if (log) console.log(response);
+
+      response.objectIds.forEach(_getAttachments);
+    })
+    .catch((error) => {
+      _error('_queryFeatures error', error);
+    });
+};
+
+/**
  * Get attachments for a feature.
- * @param {Number} id 
+ * @param {Number} id
  */
 const _getAttachments = (id) => {
   getAttachments({
     url: featureServiceUrl,
     featureId: id,
     params: {
-      returnUrl: true,
+      token,
     },
   })
     .then((response) => {
       if (log) console.log(response);
 
       response.attachmentInfos.forEach((attachmentInfo) => {
-        _downloadAttachment(attachmentInfo, id);
+        if (prefixField) {
+          getFeature({
+            url: featureServiceUrl,
+            id,
+            params: {
+              token,
+            },
+          })
+            .then((response) => {
+              const fieldValue = response.attributes ? response.attributes[prefixField] : null;
+              _downloadAttachment(attachmentInfo, id, fieldValue);
+            })
+            .catch((error) => {
+              _error(`_getAttachments#getFeature error...feature id ${id}`, error);
+            });
+        } else {
+          _downloadAttachment(attachmentInfo, id, null);
+        }
       });
     })
     .catch((error) => {
@@ -59,15 +115,17 @@ const _getAttachments = (id) => {
 
 /**
  * Download attachment.
- * @param {AttachmentInfo} attachmentInfo 
+ * @param {AttachmentInfo} attachmentInfo
  * @param {Number} id
  */
-const _downloadAttachment = (attachmentInfo, id) => {
-  const attachmentUrl = `${featureServiceUrl}/${id}/attachments/${attachmentInfo.id}`;
+const _downloadAttachment = (attachmentInfo, id, fieldValue) => {
+  let attachmentUrl = `${featureServiceUrl}/${id}/attachments/${attachmentInfo.id}`;
+
+  if (token) attachmentUrl = `${attachmentUrl}?token=${token}`;
 
   download(attachmentUrl)
     .then((data) => {
-      _writeFile(data, attachmentInfo, id);
+      _writeFile(data, attachmentInfo, id, fieldValue);
     })
     .catch((error) => {
       _error(`_downloadAttachment error...attachment url ${attachmentUrl}`, error);
@@ -76,53 +134,55 @@ const _downloadAttachment = (attachmentInfo, id) => {
 
 /**
  * Write the attachment to disc.
- * @param {Buffer} data 
- * @param {AttachmentInfo} attachmentInfo 
- * @param {Number} id 
+ * @param {Buffer} data
+ * @param {AttachmentInfo} attachmentInfo
+ * @param {Number} id
  */
-const _writeFile = (data, attachmentInfo, id) => {
+const _writeFile = async (data, attachmentInfo, id, fieldValue) => {
+  let filePath;
   const { id: attachmentId, name } = attachmentInfo;
+  const [fileName, fileType] = name.split('.');
+  const writeDirectory = flat === true ? outputDirectory : `${outputDirectory}/${fieldValue || directoryPrefix}_${id}`;
 
-  const attachmentDirectory = `attachments/${directoryPrefix}_${id}`;
+  if (flat === true) {
+    filePath = fieldValue
+      ? `${writeDirectory}/${fieldValue}_${fileName}_${attachmentId}.${fileType}`
+      : `${writeDirectory}/${id}_${fileName}_${attachmentId}.${fileType}`;
+  } else {
+    filePath = `${writeDirectory}/${fileName}_${attachmentId}.${fileType}`;
+  }
 
-  const fileParts = name.split('.');
+  await fs.ensureDir(writeDirectory);
 
-  const [fileName, fileType] = fileParts;
-
-  fs.ensureDir(attachmentDirectory);
-
-  const filePath = `${attachmentDirectory}/${fileName}_${attachmentId}.${fileType}`;
-
-  fs.writeFile(filePath, data, error => {
+  fs.writeFile(filePath, data, (error) => {
     if (error) {
-      console.log(
-        chalk.red(`Failed to write ${filePath}.`)
-      );
+      _error(`_writeFile error...file path ${filePath}`, error);
     } else if (!error && log) {
-      console.log(
-        chalk.green(`Succesfully wrote ${filePath}.`)
-      );
+      console.log(chalk.green(`Succesfully wrote ${filePath}.`));
     }
   });
 };
 
-/**
- * Ensure attachments directory.
- */
-fs.ensureDir('attachments');
+(async () => {
+  await fs.ensureDir(outputDirectory);
 
-/**
- * Begin by querying all object ids.
- */
-queryFeatures({
-  url: featureServiceUrl,
-  returnIdsOnly: true,
-})
-  .then((response) => {
-    if (log) console.log(response);
+  if (portal && username && password) {
+    const session = new UserSession({
+      username,
+      password,
+      portal,
+    });
 
-    response.objectIds.forEach(_getAttachments);
-  })
-  .catch((error) => {
-    _error('_queryFeatures error', error);
-  });
+    session
+      .getToken(featureServiceUrl)
+      .then((_token) => {
+        token = _token;
+        _queryFeatureIds();
+      })
+      .catch((error) => {
+        _error('session.getToken error', error);
+      });
+  } else {
+    _queryFeatureIds();
+  }
+}).call();
